@@ -1,0 +1,22 @@
+# Personal data — activity logs, databases
+data/activity.db
+data/tracker.db
+data/agent.log
+data/startup_error.txt
+
+# Local config (contains machine-specific paths)
+data/config.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp

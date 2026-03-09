@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PC Activity Tracker</title>
+<style>
+/* ── Reset & base ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, -apple-system, sans-serif; background: #f5f6fa; color: #2d3436; font-size: 14px; }
+a { color: #4A90E2; text-decoration: none; }
+
+/* ── Layout ── */
+.app { display: flex; flex-direction: column; min-height: 100vh; }
+header { background: #2d3436; color: #fff; padding: 0 20px; display: flex; align-items: center; gap: 16px; height: 48px; }
+header h1 { font-size: 16px; font-weight: 600; }
+.status-badge { font-size: 12px; padding: 2px 8px; border-radius: 12px; background: #636e72; }
+.status-badge.ok { background: #00b894; }
+.status-badge.paused { background: #fdcb6e; color: #2d3436; }
+.header-events { font-size: 12px; color: #b2bec3; margin-left: auto; }
+
+nav { background: #fff; border-bottom: 1px solid #dfe6e9; display: flex; gap: 0; padding: 0 20px; }
+nav button { background: none; border: none; padding: 12px 16px; cursor: pointer; font-size: 14px;
+             color: #636e72; border-bottom: 2px solid transparent; transition: .15s; }
+nav button:hover { color: #2d3436; }
+nav button.active { color: #4A90E2; border-bottom-color: #4A90E2; font-weight: 600; }
+
+main { flex: 1; padding: 20px; max-width: 1100px; margin: 0 auto; width: 100%; }
+.tab { display: none; }
+.tab.active { display: block; }
+
+/* ── Cards ── */
+.card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.08); padding: 20px; margin-bottom: 16px; }
+.card h2 { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: #2d3436; }
+
+/* ── Stats grid ── */
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 700px) { .stats-grid { grid-template-columns: 1fr; } }
+
+/* ── Table ── */
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 12px; color: #636e72; font-weight: 600; padding: 6px 10px; border-bottom: 1px solid #dfe6e9; }
+td { padding: 7px 10px; border-bottom: 1px solid #f5f6fa; font-size: 13px; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #f8f9fa; }
+
+/* ── Timeline ── */
+.timeline-wrap { overflow-x: auto; }
+canvas { display: block; }
+
+/* ── Category editor ── */
+.cat-list { list-style: none; }
+.cat-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f5f6fa; }
+.cat-color { width: 20px; height: 20px; border-radius: 4px; flex-shrink: 0; border: 1px solid #dfe6e9; }
+.cat-name { flex: 1; font-weight: 500; }
+.rules-list { font-size: 12px; color: #636e72; flex: 2; }
+.btn { padding: 6px 14px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; }
+.btn-primary { background: #4A90E2; color: #fff; }
+.btn-primary:hover { background: #357abd; }
+.btn-sm { padding: 3px 10px; font-size: 12px; }
+.btn-danger { background: #e74c3c; color: #fff; }
+.btn-ghost { background: #f5f6fa; color: #2d3436; }
+
+/* ── Modal ── */
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.overlay.hidden { display: none; }
+.modal { background: #fff; border-radius: 10px; padding: 24px; width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+.modal h3 { font-size: 16px; margin-bottom: 16px; }
+.form-row { margin-bottom: 12px; }
+.form-row label { display: block; font-size: 12px; font-weight: 600; color: #636e72; margin-bottom: 4px; }
+.form-row input, .form-row select { width: 100%; padding: 7px 10px; border: 1px solid #dfe6e9; border-radius: 6px; font-size: 13px; }
+.form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.rule-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.rule-row select, .rule-row input { flex: 1; padding: 5px 8px; border: 1px solid #dfe6e9; border-radius: 5px; font-size: 12px; }
+
+/* ── Category picker popover ── */
+.cat-picker {
+  position: fixed; z-index: 200;
+  background: #fff; border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.18);
+  padding: 8px 0; min-width: 200px;
+  max-height: 320px; overflow-y: auto;
+}
+.cat-picker-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 14px; cursor: pointer; font-size: 13px;
+}
+.cat-picker-item:hover { background: #f5f6fa; }
+.cat-picker-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.cat-picker-sep { border: none; border-top: 1px solid #dfe6e9; margin: 4px 0; }
+.cat-picker-new { color: #4A90E2; font-weight: 500; }
+.edit-btn {
+  background: none; border: none; cursor: pointer;
+  color: #b2bec3; padding: 2px 5px; border-radius: 4px;
+  font-size: 13px; line-height: 1; visibility: hidden;
+}
+tr:hover .edit-btn { visibility: visible; }
+.edit-btn:hover { color: #4A90E2; background: #f0f4ff; }
+
+/* ── New category inline form ── */
+.cat-picker-form { padding: 8px 12px; }
+.cat-picker-form input[type=text] {
+  width: 100%; padding: 5px 8px; border: 1px solid #dfe6e9;
+  border-radius: 5px; font-size: 12px; margin-bottom: 6px;
+}
+.cat-picker-form .color-row { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+.cat-picker-form .color-row label { font-size: 11px; color: #636e72; }
+.cat-picker-form .actions { display: flex; gap: 6px; }
+.cat-picker-form .actions button { flex: 1; padding: 4px 0; border-radius: 5px;
+  border: none; cursor: pointer; font-size: 12px; font-weight: 500; }
+.cat-picker-form .actions .ok { background: #4A90E2; color: #fff; }
+.cat-picker-form .actions .cancel { background: #f5f6fa; color: #636e72; }
+
+/* ── Export ── */
+.export-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.export-form .form-row { margin-bottom: 0; }
+.prompt-box { background: #f8f9fa; border: 1px solid #dfe6e9; border-radius: 6px; padding: 14px;
+              font-family: monospace; font-size: 12px; white-space: pre-wrap; max-height: 300px;
+              overflow-y: auto; margin-top: 14px; }
+
+/* ── Settings ── */
+.settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 600px) { .settings-grid { grid-template-columns: 1fr; } }
+
+/* ── Bar chart ── */
+.bar-wrap { overflow-x: auto; margin-top: 10px; }
+
+/* ── Day navigator ── */
+.day-nav { display: flex; align-items: center; justify-content: center;
+  gap: 8px; margin-bottom: 16px; }
+.day-nav button { background: #fff; border: 1px solid #dfe6e9; border-radius: 6px;
+  width: 32px; height: 32px; font-size: 16px; cursor: pointer; color: #636e72;
+  display: flex; align-items: center; justify-content: center; transition: .15s; }
+.day-nav button:hover:not(:disabled) { border-color: #4A90E2; color: #4A90E2; }
+.day-nav button:disabled { opacity: .35; cursor: default; }
+.day-nav .day-label { font-size: 15px; font-weight: 600; color: #2d3436;
+  min-width: 160px; text-align: center; }
+
+/* ── Toggle switch ── */
+.toggle-row { display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 0; border-top: 1px solid #f5f6fa; margin-top: 14px; }
+.toggle-row label { font-size: 13px; color: #2d3436; }
+.toggle-row .sub { font-size: 11px; color: #b2bec3; margin-top: 2px; }
+.switch { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; inset: 0; background: #dfe6e9; border-radius: 22px;
+  cursor: pointer; transition: background .2s; }
+.slider::before { content: ''; position: absolute; width: 16px; height: 16px;
+  left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform .2s; }
+.switch input:checked + .slider { background: #00b894; }
+.switch input:checked + .slider::before { transform: translateX(18px); }
+/* Toast */
+#toast {
+  position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(12px);
+  background: #2d3436; color: #fff; padding: 8px 20px; border-radius: 20px;
+  font-size: 13px; opacity: 0; pointer-events: none; white-space: nowrap;
+  transition: opacity .2s, transform .2s; z-index: 9999;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="app">
+
+<header>
+  <h1>PC Activity Tracker</h1>
+  <span class="status-badge" id="headerBadge">...</span>
+  <span class="header-events" id="headerEvents"></span>
+  <button class="btn btn-ghost btn-sm" id="btnPauseHeader" style="margin-left:8px">Пауза</button>
+</header>
+
+<nav>
+  <button class="active" onclick="showTab('today')">Сегодня</button>
+  <button onclick="showTab('categories')">Категории</button>
+  <button onclick="showTab('history')">История</button>
+  <button onclick="showTab('export')">Экспорт</button>
+  <button onclick="showTab('settings')">Настройки</button>
+</nav>
+
+<main>
+
+<!-- ══ TODAY ══ -->
+<div class="tab active" id="tab-today">
+  <div class="day-nav">
+    <button onclick="prevDay()" title="Предыдущий день">&#8249;</button>
+    <span class="day-label" id="dayLabel">Сегодня</span>
+    <button onclick="nextDay()" id="btnNextDay" title="Следующий день">&#8250;</button>
+  </div>
+  <div class="stats-grid">
+    <div class="card">
+      <h2>По категориям</h2>
+      <canvas id="pieChart" width="260" height="260"></canvas>
+      <div id="pieLegend" style="margin-top:10px;font-size:12px;"></div>
+    </div>
+    <div class="card">
+      <h2>Время</h2>
+      <div style="font-size:28px;font-weight:700;color:#4A90E2" id="totalActive">—</div>
+      <div style="font-size:12px;color:#636e72;margin-bottom:10px">активного времени</div>
+      <div id="catBreakdown" style="margin:10px 0 8px"></div>
+      <div style="font-size:12px;color:#b2bec3;padding-top:8px;border-top:1px solid #f5f6fa">
+        Idle: <span id="totalIdle">—</span>&nbsp;·&nbsp;Событий: <span id="totalEvents">—</span>
+      </div>
+      <button class="btn btn-sm" style="margin-top:12px;width:100%;font-size:12px"
+        onclick="saveDayToFile(viewDate)">💾 Сохранить день в файл</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Timeline</h2>
+    <div class="timeline-wrap"><canvas id="timeline" height="60"></canvas></div>
+  </div>
+  <div class="card">
+    <h2>Приложения</h2>
+    <table id="appTable">
+      <thead><tr><th>Приложение</th><th>Категория</th><th>Время</th><th>%</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══ CATEGORIES ══ -->
+<div class="tab" id="tab-categories">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h2 style="margin:0">Категории</h2>
+      <button class="btn btn-primary btn-sm" onclick="openCatModal()">+ Добавить</button>
+    </div>
+    <ul class="cat-list" id="catList"></ul>
+  </div>
+</div>
+
+<!-- ══ HISTORY ══ -->
+<div class="tab" id="tab-history">
+  <div class="card">
+    <h2>История</h2>
+    <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
+      <div class="form-row" style="margin:0">
+        <label>От</label>
+        <input type="date" id="histFrom">
+      </div>
+      <div class="form-row" style="margin:0">
+        <label>До</label>
+        <input type="date" id="histTo">
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="loadHistory()">Показать</button>
+      <button class="btn btn-sm" style="font-size:12px"
+        onclick="saveDayToFile(document.getElementById('histFrom').value || today())"
+        title="Перезаписать файл выгрузки для выбранного дня">💾 Перезаписать день</button>
+      <button class="btn btn-sm" style="font-size:12px"
+        onclick="saveDayCSV(document.getElementById('histFrom').value || today())"
+        title="Сохранить CSV для выбранного дня">📊 Сохранить CSV</button>
+      <button class="btn btn-sm" style="font-size:12px"
+        onclick="saveRangeToFiles()"
+        title="Создать/перезаписать файлы для всех дней периода">💾 Перезаписать период</button>
+    </div>
+    <div class="bar-wrap"><canvas id="barChart" height="200"></canvas></div>
+  </div>
+  <div class="card">
+    <h2>Топ приложений за период</h2>
+    <table id="histAppTable">
+      <thead><tr><th>Приложение</th><th>Время</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══ EXPORT ══ -->
+<div class="tab" id="tab-export">
+  <div class="card">
+    <h2>Экспорт данных</h2>
+    <div class="export-form">
+      <div class="form-row">
+        <label>От</label>
+        <input type="date" id="expFrom">
+      </div>
+      <div class="form-row">
+        <label>До</label>
+        <input type="date" id="expTo">
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="doExportJSON()">Скачать JSON</button>
+      <button class="btn btn-ghost btn-sm" onclick="doExportCSV()">Скачать CSV</button>
+      <button class="btn btn-ghost btn-sm" onclick="generatePrompt()">Сгенерировать промпт</button>
+    </div>
+    <div id="promptBox" class="prompt-box" style="display:none"></div>
+    <button id="btnCopyPrompt" class="btn btn-ghost btn-sm" style="display:none;margin-top:8px" onclick="copyPrompt()">Копировать промпт</button>
+  </div>
+</div>
+
+<!-- ══ SETTINGS ══ -->
+<div class="tab" id="tab-settings">
+  <div class="card">
+    <h2>Настройки агента</h2>
+    <div class="settings-grid">
+      <div class="form-row">
+        <label>Интервал опроса (секунды)</label>
+        <select id="sPollInterval">
+          <option value="5">5</option>
+          <option value="10">10</option>
+          <option value="30">30</option>
+          <option value="60">60</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Порог idle (минуты)</label>
+        <select id="sIdleThreshold">
+          <option value="120">2</option>
+          <option value="300">5</option>
+          <option value="600">10</option>
+          <option value="900">15</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Порт API</label>
+        <input type="number" id="sPort" value="27420">
+      </div>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="saveSettings()">Сохранить</button>
+
+    <div class="toggle-row">
+      <div>
+        <div label>Автозапуск с Windows</div>
+        <div class="sub">Запускать трей-агент при входе в систему</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="sAutostart" onchange="toggleAutostart(this.checked)">
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+</div>
+
+</main>
+</div>
+
+<!-- ══ CATEGORY MODAL ══ -->
+<div class="overlay hidden" id="catOverlay">
+  <div class="modal">
+    <h3 id="modalTitle">Категория</h3>
+    <div class="form-row">
+      <label>Название</label>
+      <input type="text" id="mName" placeholder="Работа">
+    </div>
+    <div class="form-row">
+      <label>Цвет</label>
+      <input type="color" id="mColor" value="#4A90E2" style="width:60px;height:32px;padding:2px;border-radius:4px;border:1px solid #dfe6e9;cursor:pointer">
+    </div>
+    <div class="form-row">
+      <label>Категория по умолчанию</label>
+      <input type="checkbox" id="mDefault" style="width:auto">
+    </div>
+    <div class="form-row">
+      <label>Правила</label>
+      <div id="rulesList"></div>
+      <button class="btn btn-ghost btn-sm" onclick="addRuleRow()" style="margin-top:6px">+ Правило</button>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeCatModal()">Отмена</button>
+      <button class="btn btn-primary" onclick="saveCat()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = "http://127.0.0.1:27420";
+let categories = [];
+let editingCatId = null;
+
+// ── Utils ──────────────────────────────────────────────────────────────────
+
+async function saveDayToFile(dateStr) {
+  if (!dateStr) { showToast('Укажите дату'); return; }
+  try {
+    const r = await fetch(`${API}/export/day`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: dateStr }),
+    });
+    const d = await r.json();
+    if (d.ok && d.skipped) {
+      showToast(`— Нет данных за ${dateStr}`, 3000);
+    } else if (d.ok) {
+      showToast(`✓ Сохранено: ${d.path}`, 4000);
+    } else {
+      showToast(`Ошибка: ${d.error}`, 4000);
+    }
+  } catch (e) {
+    showToast(`Ошибка соединения`, 3000);
+  }
+}
+
+async function saveDayCSV(dateStr) {
+  if (!dateStr) { showToast('Укажите дату'); return; }
+  try {
+    const r = await fetch(`${API}/export/day-csv`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: dateStr }),
+    });
+    const d = await r.json();
+    if (d.skipped) {
+      showToast(`Нет данных за ${dateStr}`, 3000);
+    } else if (d.ok) {
+      showToast(`✓ CSV сохранён: ${d.path}`, 5000);
+    } else {
+      showToast(`Ошибка: ${d.error}`, 4000);
+    }
+  } catch (e) {
+    showToast('Ошибка соединения', 3000);
+  }
+}
+
+async function saveRangeToFiles() {
+  const from = document.getElementById('histFrom').value;
+  const to = document.getElementById('histTo').value;
+  if (!from || !to) { showToast('Укажите период', 2000); return; }
+  showToast('⏳ Сохраняем…', 60000);
+  try {
+    const r = await fetch(`${API}/export/range`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showToast(`✓ Записано: ${d.written} файлов, без данных: ${d.skipped}`, 5000);
+    } else {
+      showToast(`Ошибка: ${d.error}`, 4000);
+    }
+  } catch (e) {
+    showToast('Ошибка соединения', 3000);
+  }
+}
+
+function showToast(msg, duration = 2000) {
+  let t = document.getElementById('toast');
+  if (!t) { t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); }
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), duration);
+}
+
+function fmtTime(sec) {
+  if (sec < 60) return `${sec}с`;
+  if (sec < 3600) return `${Math.floor(sec/60)}м`;
+  return `${Math.floor(sec/3600)}ч ${Math.floor((sec%3600)/60)}м`;
+}
+
+function today() { return new Date().toISOString().slice(0,10); }
+
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// ── Status polling ─────────────────────────────────────────────────────────
+
+async function pollStatus() {
+  try {
+    const r = await fetch(`${API}/status`);
+    const d = await r.json();
+    const badge = document.getElementById('headerBadge');
+    badge.textContent = d.paused ? '⏸ Пауза' : '▶ Работает';
+    badge.className = 'status-badge ' + (d.paused ? 'paused' : 'ok');
+    document.getElementById('headerEvents').textContent = `Сегодня: ${d.events_today} событий`;
+    document.getElementById('btnPauseHeader').textContent = d.paused ? 'Возобновить' : 'Пауза';
+  } catch {
+    const badge = document.getElementById('headerBadge');
+    badge.textContent = '✗ Нет связи';
+    badge.className = 'status-badge';
+  }
+}
+
+document.getElementById('btnPauseHeader').onclick = async () => {
+  const badge = document.getElementById('headerBadge');
+  const paused = badge.textContent.includes('Пауза') && !badge.textContent.includes('⏸');
+  // check actual state
+  const r = await fetch(`${API}/status`);
+  const d = await r.json();
+  await fetch(`${API}/${d.paused ? 'resume' : 'pause'}`, { method: 'POST' });
+  pollStatus();
+};
+
+setInterval(pollStatus, 10000);
+pollStatus();
+
+// ── Today tab ─────────────────────────────────────────────────────────────
+
+let viewDate = today();
+
+const _DAYS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+
+function _updateDayNav() {
+  const isToday = viewDate === today();
+  document.getElementById('btnNextDay').disabled = isToday;
+  const [y, m, d] = viewDate.split('-');
+  const dow = _DAYS[new Date(+y, +m - 1, +d).getDay()];
+  const label = document.getElementById('dayLabel');
+  if (isToday) {
+    label.textContent = `Сегодня, ${dow}`;
+  } else {
+    label.textContent = `${dow}, ${d}.${m}.${y}`;
+  }
+}
+
+function prevDay() {
+  const d = new Date(viewDate + 'T12:00:00');
+  d.setDate(d.getDate() - 1);
+  viewDate = d.toISOString().slice(0, 10);
+  _updateDayNav();
+  loadToday();
+}
+
+function nextDay() {
+  if (viewDate >= today()) return;
+  const d = new Date(viewDate + 'T12:00:00');
+  d.setDate(d.getDate() + 1);
+  viewDate = d.toISOString().slice(0, 10);
+  _updateDayNav();
+  loadToday();
+}
+
+async function loadToday() {
+  try {
+    const r = await fetch(`${API}/stats?date=${viewDate}`);
+    const d = await r.json();
+    renderPie(d.by_category);
+    renderCatBreakdown(d.by_category, d.active_seconds);
+    renderTimeline(d.events);
+    renderAppTable(d.by_app, d.app_category || {}, d.active_seconds, d.idle_seconds);
+    document.getElementById('totalActive').textContent = fmtTime(d.active_seconds);
+    document.getElementById('totalIdle').textContent = fmtTime(d.idle_seconds);
+    document.getElementById('totalEvents').textContent = d.total_events;
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+function renderPie(byCat) {
+  const canvas = document.getElementById('pieChart');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const entries = Object.values(byCat).filter(c => c.seconds > 0);
+  const total = entries.reduce((s, c) => s + c.seconds, 0);
+  if (total === 0) { ctx.fillStyle = '#dfe6e9'; ctx.beginPath(); ctx.arc(W/2,H/2,100,0,Math.PI*2); ctx.fill(); return; }
+
+  let angle = -Math.PI / 2;
+  entries.forEach(c => {
+    const slice = (c.seconds / total) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(W/2, H/2);
+    ctx.arc(W/2, H/2, 100, angle, angle + slice);
+    ctx.closePath();
+    ctx.fillStyle = c.color;
+    ctx.fill();
+    angle += slice;
+  });
+
+  const legend = document.getElementById('pieLegend');
+  legend.innerHTML = entries.map(c =>
+    `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;margin-bottom:4px">
+      <span style="width:10px;height:10px;border-radius:2px;background:${c.color};flex-shrink:0"></span>
+      ${c.name} ${Math.round(c.seconds/total*100)}%
+    </span>`
+  ).join('');
+}
+
+function renderCatBreakdown(byCat, totalActive) {
+  const el = document.getElementById('catBreakdown');
+  const entries = Object.values(byCat)
+    .filter(c => c.seconds > 0)
+    .sort((a, b) => b.seconds - a.seconds);
+  if (!entries.length || !totalActive) { el.innerHTML = ''; return; }
+  el.innerHTML = entries.map(c => {
+    const pct = Math.round(c.seconds / totalActive * 100);
+    return `
+      <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #f5f6fa">
+        <span style="width:8px;height:8px;border-radius:2px;background:${c.color};flex-shrink:0"></span>
+        <span style="flex:1;font-size:13px;color:#2d3436">${c.name}</span>
+        <span style="font-size:12px;color:#636e72;min-width:32px;text-align:right">${pct}%</span>
+        <span style="font-size:13px;font-weight:500;color:#2d3436;min-width:56px;text-align:right">${fmtTime(c.seconds)}</span>
+      </div>`;
+  }).join('');
+}
+
+function renderTimeline(events) {
+  const canvas = document.getElementById('timeline');
+  const W = canvas.parentElement.clientWidth || 800;
+  canvas.width = W;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, 60);
+
+  if (!events || events.length === 0) return;
+
+  const [_y, _m, _d] = viewDate.split('-');
+  const dayStart = new Date(+_y, +_m - 1, +_d).getTime() / 1000;
+  const dayEnd = dayStart + 86400;
+  const scale = W / (dayEnd - dayStart);
+
+  // Draw hour marks
+  ctx.fillStyle = '#dfe6e9';
+  for (let h = 0; h <= 24; h++) {
+    const x = (h * 3600) * scale;
+    ctx.fillRect(x, 40, 1, 20);
+    if (h % 2 === 0) {
+      ctx.fillStyle = '#b2bec3';
+      ctx.font = '10px system-ui';
+      ctx.fillText(`${h}:00`, x + 2, 58);
+      ctx.fillStyle = '#dfe6e9';
+    }
+  }
+
+  events.forEach((ev, i) => {
+    const x = (ev.timestamp - dayStart) * scale;
+    const nextTs = i + 1 < events.length ? events[i+1].timestamp : ev.timestamp + 10;
+    const w = Math.max(2, Math.min((nextTs - ev.timestamp) * scale, 60 * scale));
+    ctx.fillStyle = ev.is_idle ? '#dfe6e9' : (ev.category_color || '#b2bec3');
+    ctx.fillRect(x, 4, w, 32);
+  });
+}
+
+function renderAppTable(byApp, appCategory, totalActive, idleSeconds) {
+  const tbody = document.querySelector('#appTable tbody');
+  const rows = Object.entries(byApp)
+    .map(([app, sec]) => ({ app, sec, cat: appCategory[app] || {} }))
+    .sort((a, b) => b.sec - a.sec)
+    .slice(0, 20);
+
+  const activeRows = rows.map(r => `
+    <tr>
+      <td>${r.app}</td>
+      <td>
+        ${r.cat.color
+          ? `<span style="display:inline-flex;align-items:center;gap:5px">
+               <span style="width:8px;height:8px;border-radius:2px;background:${r.cat.color}"></span>
+               ${r.cat.name}
+             </span>`
+          : '<span style="color:#b2bec3">—</span>'}
+      </td>
+      <td>${fmtTime(r.sec)}</td>
+      <td>${totalActive ? Math.round(r.sec/totalActive*100) : 0}%</td>
+      <td style="width:32px">
+        ${!r.app.includes('127.0.0.1') && !r.app.includes('localhost') ? `<button class="edit-btn" title="Назначить категорию"
+          onclick="showCatPicker(event, '${r.app.replace(/'/g,"\\'")}')">✏️</button>` : ''}
+      </td>
+    </tr>
+  `).join('');
+
+  const totalTracked = (totalActive || 0) + (idleSeconds || 0);
+  const idleRow = idleSeconds > 0 ? `
+    <tr style="color:#95a5a6">
+      <td>⏸ Неактивен</td>
+      <td><span style="color:#b2bec3">—</span></td>
+      <td>${fmtTime(idleSeconds)}</td>
+      <td>${totalTracked ? Math.round(idleSeconds/totalTracked*100) : 0}%</td>
+      <td></td>
+    </tr>
+  ` : '';
+
+  tbody.innerHTML = activeRows + idleRow;
+}
+
+// ── Category picker ────────────────────────────────────────────────────────
+
+let _picker = null;
+
+function closePicker() {
+  if (_picker) { _picker.remove(); _picker = null; }
+}
+
+document.addEventListener('click', e => {
+  if (_picker && !_picker.contains(e.target)) closePicker();
+});
+
+function showCatPicker(e, appKey) {
+  e.stopPropagation();
+  closePicker();
+
+  const btn = e.currentTarget;
+  const rect = btn.getBoundingClientRect();
+
+  _picker = document.createElement('div');
+  _picker.className = 'cat-picker';
+  _renderPickerList(_picker, appKey);
+
+  // Position below the button, flip if near bottom
+  document.body.appendChild(_picker);
+  const ph = _picker.offsetHeight;
+  const top = rect.bottom + 4 + ph > window.innerHeight
+    ? rect.top - ph - 4 : rect.bottom + 4;
+  _picker.style.left = Math.min(rect.left, window.innerWidth - 220) + 'px';
+  _picker.style.top = top + 'px';
+}
+
+function _renderPickerList(picker, appKey) {
+  picker.innerHTML = '';
+
+  categories.forEach(cat => {
+    const item = document.createElement('div');
+    item.className = 'cat-picker-item';
+    item.innerHTML = `<span class="cat-picker-dot" style="background:${cat.color}"></span>${cat.name}`;
+    item.onclick = (e) => { e.stopPropagation(); assignCategory(appKey, cat.id); closePicker(); };
+    picker.appendChild(item);
+  });
+
+  const sep = document.createElement('hr');
+  sep.className = 'cat-picker-sep';
+  picker.appendChild(sep);
+
+  const newItem = document.createElement('div');
+  newItem.className = 'cat-picker-item cat-picker-new';
+  newItem.innerHTML = '＋ Новая категория';
+  newItem.onclick = (e) => { e.stopPropagation(); _renderPickerNewForm(picker, appKey); };
+  picker.appendChild(newItem);
+}
+
+function _renderPickerNewForm(picker, appKey) {
+  picker.innerHTML = `
+    <div class="cat-picker-form">
+      <input type="text" id="pcName" placeholder="Название категории" autofocus>
+      <div class="color-row">
+        <label>Цвет</label>
+        <input type="color" id="pcColor" value="#4A90E2"
+          style="width:36px;height:24px;padding:1px;border-radius:4px;border:1px solid #dfe6e9;cursor:pointer">
+      </div>
+      <div class="actions">
+        <button class="ok" onclick="createAndAssign(event,'${appKey.replace(/'/g,"\\'")}')">Создать</button>
+        <button class="cancel" onclick="_renderPickerList(document.querySelector('.cat-picker'),'${appKey.replace(/'/g,"\\'")}')">Назад</button>
+      </div>
+    </div>`;
+  picker.querySelector('#pcName').focus();
+}
+
+async function assignCategory(appKey, catId) {
+  // Determine rule type from key shape
+  const isExe = appKey.toLowerCase().endsWith('.exe');
+  const isDomain = !isExe && appKey.includes('.') && !appKey.includes('/');
+  const isInternal = appKey.includes('127.0.0.1') || appKey.includes('localhost');
+
+  if (isInternal) { closePicker(); return; }
+
+  const ruleType = isDomain ? 'url_domain' : 'app_contains';
+  const ruleValue = isExe ? appKey.slice(0, -4).toLowerCase() : appKey.toLowerCase();
+
+  const cat = categories.find(c => c.id === catId);
+  if (!cat) return;
+
+  // Avoid duplicate rule
+  const exists = cat.rules.some(r => r.rule_type === ruleType && r.value === ruleValue);
+  if (!exists) {
+    cat.rules.push({
+      id: Date.now(),
+      category_id: catId,
+      rule_type: ruleType,
+      value: ruleValue,
+      sort_order: cat.rules.length,
+    });
+  }
+
+  await fetch(`${API}/categories`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(categories),
+  });
+
+  await loadCategories();
+  await loadToday();
+  showToast('✓ Категория сохранена');
+}
+
+async function createAndAssign(e, appKey) {
+  e.stopPropagation();
+  const name = document.getElementById('pcName').value.trim();
+  if (!name) { document.getElementById('pcName').focus(); return; }
+  const color = document.getElementById('pcColor').value;
+
+  const newCat = {
+    id: Date.now(),
+    name,
+    color,
+    is_default: 0,
+    sort_order: categories.length,
+    rules: [],
+  };
+  categories.push(newCat);
+  closePicker();
+  await assignCategory(appKey, newCat.id);
+}
+
+// ── Categories tab ────────────────────────────────────────────────────────
+
+async function loadCategories() {
+  const r = await fetch(`${API}/categories`);
+  categories = await r.json();
+  renderCatList();
+}
+
+function renderCatList() {
+  const ul = document.getElementById('catList');
+  ul.innerHTML = categories.map(c => `
+    <li class="cat-item">
+      <div class="cat-color" style="background:${c.color}"></div>
+      <div class="cat-name">${c.name}${c.is_default ? ' <span style="font-size:11px;color:#636e72">(по умолч.)</span>' : ''}</div>
+      <div class="rules-list">${c.rules.map(r => `${r.rule_type}: ${r.value}`).join(' | ') || '—'}</div>
+      <button class="btn btn-ghost btn-sm" onclick="openCatModal(${c.id})">✏️</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteCat(${c.id})">✕</button>
+    </li>
+  `).join('');
+}
+
+function openCatModal(id) {
+  editingCatId = id || null;
+  const cat = id ? categories.find(c => c.id === id) : null;
+  document.getElementById('modalTitle').textContent = cat ? 'Редактировать категорию' : 'Новая категория';
+  document.getElementById('mName').value = cat ? cat.name : '';
+  document.getElementById('mColor').value = cat ? cat.color : '#4A90E2';
+  document.getElementById('mDefault').checked = cat ? !!cat.is_default : false;
+
+  const rl = document.getElementById('rulesList');
+  rl.innerHTML = '';
+  if (cat) cat.rules.forEach(r => addRuleRow(r));
+
+  document.getElementById('catOverlay').classList.remove('hidden');
+}
+
+function closeCatModal() {
+  document.getElementById('catOverlay').classList.add('hidden');
+}
+
+let _ruleCounter = 0;
+function addRuleRow(rule) {
+  const id = _ruleCounter++;
+  const rl = document.getElementById('rulesList');
+  const div = document.createElement('div');
+  div.className = 'rule-row';
+  div.dataset.ruleId = rule ? rule.id : `new_${id}`;
+  div.innerHTML = `
+    <select class="rtype">
+      ${['app_contains','app_exact','url_contains','url_domain'].map(t =>
+        `<option value="${t}" ${rule && rule.rule_type===t ? 'selected' : ''}>${t}</option>`
+      ).join('')}
+    </select>
+    <input type="text" class="rval" placeholder="значение" value="${rule ? rule.value : ''}">
+    <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">✕</button>
+  `;
+  rl.appendChild(div);
+}
+
+async function saveCat() {
+  const name = document.getElementById('mName').value.trim();
+  if (!name) return alert('Введите название');
+
+  const rules = [...document.querySelectorAll('#rulesList .rule-row')].map((row, i) => ({
+    id: row.dataset.ruleId.startsWith('new_') ? (Date.now() + i) : parseInt(row.dataset.ruleId),
+    category_id: editingCatId,
+    rule_type: row.querySelector('.rtype').value,
+    value: row.querySelector('.rval').value.trim(),
+    sort_order: i,
+  })).filter(r => r.value);
+
+  if (editingCatId) {
+    const idx = categories.findIndex(c => c.id === editingCatId);
+    categories[idx] = { ...categories[idx], name, color: document.getElementById('mColor').value,
+      is_default: document.getElementById('mDefault').checked ? 1 : 0, rules };
+  } else {
+    const newId = Date.now();
+    categories.push({ id: newId, name, color: document.getElementById('mColor').value,
+      is_default: document.getElementById('mDefault').checked ? 1 : 0,
+      sort_order: categories.length, rules });
+  }
+
+  await fetch(`${API}/categories`, { method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(categories) });
+  closeCatModal();
+  loadCategories();
+}
+
+async function deleteCat(id) {
+  if (!confirm('Удалить категорию?')) return;
+  categories = categories.filter(c => c.id !== id);
+  await fetch(`${API}/categories`, { method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(categories) });
+  loadCategories();
+}
+
+// ── History tab ───────────────────────────────────────────────────────────
+
+async function loadHistory() {
+  const from = document.getElementById('histFrom').value;
+  const to = document.getElementById('histTo').value;
+  if (!from || !to) return;
+
+  // Collect stats per day
+  const days = [];
+  let cur = new Date(from);
+  const end = new Date(to);
+  while (cur <= end) {
+    const ds = cur.toISOString().slice(0,10);
+    try {
+      const r = await fetch(`${API}/stats?date=${ds}`);
+      const d = await r.json();
+      days.push({ date: ds, ...d });
+    } catch { days.push({ date: ds, by_category: {}, active_seconds: 0 }); }
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  renderBarChart(days);
+  renderHistAppTable(days);
+}
+
+function renderBarChart(days) {
+  const canvas = document.getElementById('barChart');
+  const W = canvas.parentElement.clientWidth || 700;
+  canvas.width = W;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, 200);
+
+  if (days.length === 0) return;
+  const maxSec = Math.max(...days.map(d => d.active_seconds || 0), 1);
+  const barW = Math.max(20, Math.floor((W - 40) / days.length) - 4);
+  const H = 160;
+
+  days.forEach((day, i) => {
+    const x = 20 + i * (barW + 4);
+    const entries = Object.values(day.by_category || {}).filter(c => c.seconds > 0);
+    const total = day.active_seconds || 0;
+    let yOff = H;
+    entries.sort((a,b) => b.seconds - a.seconds).forEach(c => {
+      const h = (c.seconds / maxSec) * H;
+      ctx.fillStyle = c.color;
+      ctx.fillRect(x, yOff - h, barW, h);
+      yOff -= h;
+    });
+    ctx.fillStyle = '#636e72';
+    ctx.font = '10px system-ui';
+    ctx.fillText(day.date.slice(5), x, 180);
+  });
+}
+
+function renderHistAppTable(days) {
+  const merged = {};
+  days.forEach(d => {
+    Object.entries(d.by_app || {}).forEach(([app, sec]) => {
+      merged[app] = (merged[app] || 0) + sec;
+    });
+  });
+  const rows = Object.entries(merged).sort((a,b) => b[1]-a[1]).slice(0,15);
+  const tbody = document.querySelector('#histAppTable tbody');
+  tbody.innerHTML = rows.map(([app, sec]) => `<tr><td>${app}</td><td>${fmtTime(sec)}</td></tr>`).join('');
+}
+
+// ── Export tab ────────────────────────────────────────────────────────────
+
+async function doExportJSON() {
+  const from = document.getElementById('expFrom').value || today();
+  const to = document.getElementById('expTo').value || today();
+  window.open(`${API}/export?from=${from}&to=${to}&format=json`);
+}
+
+async function doExportCSV() {
+  const from = document.getElementById('expFrom').value || today();
+  const to = document.getElementById('expTo').value || today();
+  window.open(`${API}/export?from=${from}&to=${to}&format=csv`);
+}
+
+async function generatePrompt() {
+  const from = document.getElementById('expFrom').value || today();
+  const to = document.getElementById('expTo').value || today();
+  const r = await fetch(`${API}/export?from=${from}&to=${to}&format=json`);
+  const d = await r.json();
+
+  const totalH = (d.total_active_seconds / 3600).toFixed(1);
+  const catLines = (d.by_category || []).map(c =>
+    `  - ${c.name}: ${fmtTime(c.seconds)} (${c.percent}%)`
+  ).join('\n');
+  const appLines = (d.top_apps || []).slice(0,10).map(a =>
+    `  - ${a.app}: ${fmtTime(a.seconds)}`
+  ).join('\n');
+
+  const prompt = `Вот данные о моей активности за компьютером (${from} — ${to}).
+
+Общее активное время: ${totalH} часов
+
+По категориям:
+${catLines}
+
+Топ приложений:
+${appLines}
+
+Пожалуйста, проанализируй мой рабочий день и дай советы по продуктивности: что стоит изменить, на чём сфокусироваться, как улучшить баланс между задачами.`;
+
+  const box = document.getElementById('promptBox');
+  box.textContent = prompt;
+  box.style.display = 'block';
+  document.getElementById('btnCopyPrompt').style.display = 'inline-block';
+}
+
+function copyPrompt() {
+  navigator.clipboard.writeText(document.getElementById('promptBox').textContent);
+  document.getElementById('btnCopyPrompt').textContent = 'Скопировано ✓';
+  setTimeout(() => document.getElementById('btnCopyPrompt').textContent = 'Копировать промпт', 2000);
+}
+
+// ── Settings tab ──────────────────────────────────────────────────────────
+
+async function loadSettings() {
+  try {
+    const r = await fetch(`${API}/config`);
+    const d = await r.json();
+    document.getElementById('sPollInterval').value = d.poll_interval || 10;
+    document.getElementById('sIdleThreshold').value = d.idle_threshold || 300;
+    document.getElementById('sPort').value = d.api_port || 27420;
+  } catch {}
+  try {
+    const r = await fetch(`${API}/autostart`);
+    const d = await r.json();
+    document.getElementById('sAutostart').checked = !!d.enabled;
+  } catch {}
+}
+
+async function toggleAutostart(enabled) {
+  try {
+    const r = await fetch(`${API}/autostart`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showToast(enabled ? '✓ Автозапуск включён' : '✓ Автозапуск отключён');
+    } else {
+      showToast(`Ошибка: ${d.error}`, 4000);
+      // revert toggle
+      document.getElementById('sAutostart').checked = !enabled;
+    }
+  } catch {
+    showToast('Ошибка соединения', 3000);
+    document.getElementById('sAutostart').checked = !enabled;
+  }
+}
+
+async function saveSettings() {
+  const cfg = {
+    poll_interval: parseInt(document.getElementById('sPollInterval').value),
+    idle_threshold: parseInt(document.getElementById('sIdleThreshold').value),
+    api_port: parseInt(document.getElementById('sPort').value),
+  };
+  await fetch(`${API}/config`, { method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(cfg) });
+  alert('Настройки сохранены');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+
+function initDates() {
+  const t = today();
+  const weekAgo = new Date(Date.now() - 7*86400000).toISOString().slice(0,10);
+  document.getElementById('histFrom').value = weekAgo;
+  document.getElementById('histTo').value = t;
+  document.getElementById('expFrom').value = t;
+  document.getElementById('expTo').value = t;
+}
+
+initDates();
+loadToday();
+loadCategories();
+loadSettings();
+setInterval(() => { if (viewDate === today()) loadToday(); }, 30000);
+</script>
+</body>
+</html>

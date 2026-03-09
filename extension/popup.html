@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<style>
+  body { font-family: system-ui, sans-serif; width: 220px; padding: 12px; margin: 0; color: #333; }
+  h3 { margin: 0 0 8px; font-size: 14px; }
+  .status { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-bottom: 10px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; flex-shrink: 0; }
+  .dot.ok { background: #5BA85A; }
+  .stat { font-size: 13px; margin: 4px 0; }
+  .stat span { font-weight: 600; }
+  a { display: block; margin-top: 10px; text-align: center; font-size: 12px;
+      color: #4A90E2; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<h3>PC Activity Tracker</h3>
+<div class="status">
+  <div class="dot" id="dot"></div>
+  <span id="statusText">Проверка...</span>
+</div>
+<div class="stat">Сегодня событий: <span id="eventsToday">—</span></div>
+<div class="stat">Состояние: <span id="agentState">—</span></div>
+<a href="http://127.0.0.1:27420" target="_blank">Открыть Dashboard →</a>
+
+<script src="popup.js"></script>
+</body>
+</html>
