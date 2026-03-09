@@ -1,6 +1,6 @@
 # PC Activity Tracker
 
-Lightweight, privacy-first Windows activity tracker that runs in the background and keeps all data local. No subscriptions, no cloud — your data stays on your machine.
+A lightweight, open-source alternative to RescueTime for Windows. Tracks application usage, browser activity, and idle time — all data stays local on your machine. No subscriptions, no cloud, no telemetry.
 
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-blue)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10+-green)
@@ -54,10 +54,10 @@ pip install -r requirements.txt
 python run.py
 ```
 
-Or run without console window:
+Or run without console window (via VBS launcher):
 
 ```bash
-pythonw run_tray.pyw
+wscript.exe start_tray.vbs
 ```
 
 The agent starts in the system tray. Open the dashboard at [http://127.0.0.1:27420](http://127.0.0.1:27420).
@@ -86,6 +86,14 @@ Settings are available in Web UI → Settings tab, or in `data/config.json`:
 - Incognito tabs are not tracked by default
 - No telemetry, no external API calls
 
+## For AI Agents
+
+The `/export` API endpoint returns structured JSON optimized for LLM consumption — activity summaries by category and app, ready to use as context for productivity analysis with Claude, ChatGPT, or any other AI assistant.
+
 ## License
 
 MIT
+
+---
+
+*Built as a simple, self-hosted alternative to RescueTime, ManicTime, and ActivityWatch for Windows users who prefer to keep their data local.*

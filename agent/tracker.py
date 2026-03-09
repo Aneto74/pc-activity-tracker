@@ -17,6 +17,8 @@ from . import database
 
 logger = logging.getLogger(__name__)
 
+BROWSER_APPS = {"chrome.exe", "firefox.exe", "msedge.exe", "opera.exe", "brave.exe"}
+
 
 # ─── Idle detection ────────────────────────────────────────────────────────
 
@@ -119,8 +121,7 @@ class Tracker:
         url, page_title = _get_browser_state()
 
         # Only attach URL if active app is a browser
-        browser_names = {"chrome.exe", "firefox.exe", "msedge.exe", "opera.exe"}
-        if app_name.lower() not in browser_names:
+        if app_name.lower() not in BROWSER_APPS:
             url = None
             page_title = None
 

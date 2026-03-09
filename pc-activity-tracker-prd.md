@@ -1,6 +1,6 @@
 # PC Activity Tracker — PRD
 
-**Версия:** 1.3
+**Версия:** 1.4
 **Дата:** 2026-03-09
 **Платформа:** Windows
 **Компоненты:** Desktop Agent (Python) + Chrome Extension + Web UI

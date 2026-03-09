@@ -1,5 +1,43 @@
 # PC Activity Tracker — История разработки
 
+## [2026-03-09] Сессия 8: Рефакторинг кода, перенос в Resources, публикация на GitHub
+
+### Задача
+Проект стабилизировался и стал утилитой. Перенос из `01 Project` в `03 Resources/_Tools`, публикация на GitHub, рефакторинг кода.
+
+### Изменения по файлам
+
+| Файл | Изменение |
+|------|-----------|
+| `run.py` | Добавлен error-capture (try/except с записью в `data/startup_error.txt`) |
+| `run_tray.pyw` | **Удалён** — дублировал `run.py`, не использовался (VBS вызывает `run.py`) |
+| `agent/tracker.py` | Вынесена константа `BROWSER_APPS` (единый набор: chrome, firefox, edge, opera, brave) |
+| `agent/database.py` | Импорт `BROWSER_APPS` из tracker; все импорты на уровне модуля; извлечён `_load_classification_context()` из дублирующегося кода `get_stats()` и `generate_daily_csv()`; убран мёртвый `import time as _time` |
+| `agent/config.py` | Дефолтный `export_dir` заменён на относительный `data/export` (для open-source) |
+| `agent/api.py` | Добавлена валидация ключей конфига (whitelist `_ALLOWED_CONFIG_KEYS`) |
+| `ui/index.html` | `alert()` → `showToast()` (2 места) |
+| `.gitignore` | Создан — исключает `data/*.db`, логи, `config.json`, `__pycache__` |
+| `README.md` | Создан — описание проекта для GitHub |
+
+### Решения и обоснования
+
+- **Удалён `run_tray.pyw`**: `start_tray.vbs` вызывает `run.py`, а не `.pyw`. Полезная логика error-capture перенесена в `run.py`.
+- **Единый `BROWSER_APPS`**: был баг — `brave.exe` был в `database.py`, но отсутствовал в `tracker.py`. Теперь одна константа в `tracker.py`, импортируется в `database.py`.
+- **`_load_classification_context()`**: блок загрузки rules + categories + default_cat_id дублировался в `get_stats()` и `generate_daily_csv()`. Извлечён в отдельную функцию.
+- **Валидация конфига**: `POST /config` принимал любой JSON. Теперь фильтрует по whitelist из 4 ключей.
+- **Дефолтный `export_dir`**: личный путь `D:/02 Area/...` заменён на `data/export` для open-source. Локальный `config.json` уже содержит правильный путь — изменение влияет только на новые установки.
+
+### Что не трогали (осознанно)
+- CORS `*` — допустимо для localhost-only
+- Кэширование правил классификации — преждевременная оптимизация
+- Global state → классы — работает стабильно
+- constants.py — overkill для 6 файлов
+
+### GitHub
+Репозиторий: https://github.com/Aneto74/pc-activity-tracker
+
+---
+
 ## [2026-03-09] Сессия 7: Ручной CSV-экспорт через UI + bugfix
 
 ### Задача

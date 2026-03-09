@@ -11,7 +11,7 @@ DEFAULTS = {
     "idle_threshold": 300,     # seconds (5 min)
     "api_port": 27420,
     "db_path": DB_PATH,
-    "export_dir": "D:/02 Area/Personal Base/Life/Activity",
+    "export_dir": os.path.join(DATA_DIR, "export"),
 }
 
 

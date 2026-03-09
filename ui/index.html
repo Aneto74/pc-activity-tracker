@@ -851,7 +851,7 @@ function addRuleRow(rule) {
 
 async function saveCat() {
   const name = document.getElementById('mName').value.trim();
-  if (!name) return alert('Введите название');
+  if (!name) return showToast('Введите название');
 
   const rules = [...document.querySelectorAll('#rulesList .rule-row')].map((row, i) => ({
     id: row.dataset.ruleId.startsWith('new_') ? (Date.now() + i) : parseInt(row.dataset.ruleId),
@@ -1050,7 +1050,7 @@ async function saveSettings() {
   };
   await fetch(`${API}/config`, { method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify(cfg) });
-  alert('Настройки сохранены');
+  showToast('Настройки сохранены');
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────

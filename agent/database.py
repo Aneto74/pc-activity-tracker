@@ -1,7 +1,13 @@
+import csv
+import datetime
+import os
 import sqlite3
 import time
+from collections import defaultdict
 from contextlib import contextmanager
 from typing import Optional
+
+from .tracker import BROWSER_APPS
 
 _db_path: str = ""
 
@@ -181,10 +187,31 @@ def _classify_with(
     return default_cat_id
 
 
+# ─── Classification context (shared by stats & CSV export) ────────────────
+
+def _load_classification_context(conn) -> tuple:
+    """Load rules, categories map, and default category ID.
+    Returns (rules_list, cats_map, default_cat_id)."""
+    rules_rows = conn.execute(
+        """SELECT r.rule_type, r.value, r.category_id
+           FROM rules r
+           JOIN categories c ON c.id = r.category_id
+           ORDER BY c.sort_order, r.sort_order"""
+    ).fetchall()
+    cats_map = {
+        r["id"]: {"name": r["name"], "color": r["color"]}
+        for r in conn.execute("SELECT id, name, color FROM categories")
+    }
+    default_row = conn.execute(
+        "SELECT id FROM categories WHERE is_default=1 LIMIT 1"
+    ).fetchone()
+    default_cat_id = default_row["id"] if default_row else None
+    return [dict(r) for r in rules_rows], cats_map, default_cat_id
+
+
 # ─── Stats ─────────────────────────────────────────────────────────────────
 
 def get_stats(date_str: str) -> dict:
-    import datetime
     day = datetime.date.fromisoformat(date_str)
     ts_start = int(datetime.datetime(day.year, day.month, day.day).timestamp())
     ts_end = ts_start + 86400
@@ -199,23 +226,7 @@ def get_stats(date_str: str) -> dict:
             (ts_start, ts_end),
         ).fetchall()
 
-        # Load current rules and categories for live re-classification
-        rules_rows = conn.execute(
-            """SELECT r.rule_type, r.value, r.category_id
-               FROM rules r
-               JOIN categories c ON c.id = r.category_id
-               ORDER BY c.sort_order, r.sort_order"""
-        ).fetchall()
-        cats_map = {
-            r["id"]: {"name": r["name"], "color": r["color"]}
-            for r in conn.execute("SELECT id, name, color FROM categories")
-        }
-        default_row = conn.execute(
-            "SELECT id FROM categories WHERE is_default=1 LIMIT 1"
-        ).fetchone()
-        default_cat_id = default_row["id"] if default_row else None
-
-    rules_list = [dict(r) for r in rules_rows]
+        rules_list, cats_map, default_cat_id = _load_classification_context(conn)
 
     # Re-classify each event using current rules (ignores stale stored category_id)
     events = []
@@ -228,9 +239,6 @@ def get_stats(date_str: str) -> dict:
         events.append(ev)
 
     return _aggregate_stats(events)
-
-
-_BROWSER_APPS = {"chrome.exe", "firefox.exe", "msedge.exe", "opera.exe", "brave.exe"}
 
 
 def _extract_domain(url: Optional[str]) -> Optional[str]:
@@ -248,8 +256,7 @@ def _extract_domain(url: Optional[str]) -> Optional[str]:
 
 
 def _aggregate_stats(events: list) -> dict:
-    from collections import defaultdict
-    poll = 10
+    poll = 10  # fallback gap for last event
 
     by_app: dict = defaultdict(int)
     app_category: dict = {}
@@ -275,7 +282,7 @@ def _aggregate_stats(events: list) -> dict:
         # Skip agent-polled browser events when extension event exists within ±15s
         # to avoid double-counting the same browsing session
         if (ev.get("source") == "agent"
-                and ev["app_name"].lower() in _BROWSER_APPS):
+                and ev["app_name"].lower() in BROWSER_APPS):
             ts = ev["timestamp"]
             if any(abs(ts - ext_ts) <= 15 for ext_ts in ext_timestamps):
                 continue
@@ -284,7 +291,7 @@ def _aggregate_stats(events: list) -> dict:
 
         # Use domain as display key for browser events with URL
         url = ev.get("url")
-        domain = _extract_domain(url) if ev["app_name"].lower() in _BROWSER_APPS else None
+        domain = _extract_domain(url) if ev["app_name"].lower() in BROWSER_APPS else None
         display_key = domain if domain else ev["app_name"]
 
         by_app[display_key] += gap
@@ -307,7 +314,6 @@ def _aggregate_stats(events: list) -> dict:
 
 
 def count_today() -> int:
-    import datetime, time as _time
     today = datetime.date.today()
     ts_start = int(datetime.datetime(today.year, today.month, today.day).timestamp())
     with _conn() as conn:
@@ -371,8 +377,6 @@ def _is_domain(key: str) -> bool:
 def generate_daily_export(date_str: str, export_dir: str):
     """Build a Markdown daily report and write it to export_dir/YYYY-MM-DD.md.
     Returns the absolute path of the written file, or None if no data for the day."""
-    import os
-
     stats = get_stats(date_str)
     n_ev = stats["total_events"]
 
@@ -454,10 +458,6 @@ def generate_daily_export(date_str: str, export_dir: str):
 def generate_daily_csv(date_str: str, export_dir: str):
     """Write activity_YYYY-MM-DD_YYYY-MM-DD.csv for the given day.
     Returns the file path, or None if there are no events."""
-    import csv
-    import datetime
-    import os
-
     day = datetime.date.fromisoformat(date_str)
     ts_start = int(datetime.datetime(day.year, day.month, day.day).timestamp())
     ts_end = ts_start + 86400
@@ -472,25 +472,10 @@ def generate_daily_csv(date_str: str, export_dir: str):
             (ts_start, ts_end),
         ).fetchall()
 
-        rules_rows = conn.execute(
-            """SELECT r.rule_type, r.value, r.category_id
-               FROM rules r
-               JOIN categories c ON c.id = r.category_id
-               ORDER BY c.sort_order, r.sort_order"""
-        ).fetchall()
-        cats_map = {
-            r["id"]: r["name"]
-            for r in conn.execute("SELECT id, name FROM categories")
-        }
-        default_row = conn.execute(
-            "SELECT id FROM categories WHERE is_default=1 LIMIT 1"
-        ).fetchone()
-        default_cat_id = default_row["id"] if default_row else None
+        rules_list, cats_map, default_cat_id = _load_classification_context(conn)
 
     if not rows:
         return None
-
-    rules_list = [dict(r) for r in rules_rows]
 
     os.makedirs(export_dir, exist_ok=True)
     file_name = f"activity_{date_str}_{date_str}.csv"
@@ -503,7 +488,8 @@ def generate_daily_csv(date_str: str, export_dir: str):
         for r in rows:
             ev = dict(r)
             cat_id = _classify_with(ev["app_name"], ev.get("url"), rules_list, default_cat_id)
-            cat_name = cats_map.get(cat_id, "Прочее") if cat_id is not None else "Прочее"
+            cat_info = cats_map.get(cat_id) if cat_id is not None else None
+            cat_name = cat_info["name"] if cat_info else "Прочее"
             dt_str = datetime.datetime.fromtimestamp(ev["timestamp"]).strftime("%Y-%m-%d %H:%M:%S")
             writer.writerow([
                 dt_str,

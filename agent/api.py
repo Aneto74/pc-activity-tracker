@@ -179,15 +179,19 @@ def get_config():
     return jsonify(_cfg)
 
 
+_ALLOWED_CONFIG_KEYS = {"poll_interval", "idle_threshold", "api_port", "export_dir"}
+
+
 @app.route("/config", methods=["POST"])
 def save_config():
     data = request.get_json(silent=True) or {}
-    _cfg.update(data)
+    filtered = {k: v for k, v in data.items() if k in _ALLOWED_CONFIG_KEYS}
+    _cfg.update(filtered)
     cfg_module.save(_cfg)
-    if _tracker and "poll_interval" in data:
-        _tracker.poll_interval = int(data["poll_interval"])
-    if _tracker and "idle_threshold" in data:
-        _tracker.idle_threshold = int(data["idle_threshold"])
+    if _tracker and "poll_interval" in filtered:
+        _tracker.poll_interval = int(filtered["poll_interval"])
+    if _tracker and "idle_threshold" in filtered:
+        _tracker.idle_threshold = int(filtered["idle_threshold"])
     return jsonify({"ok": True})
 
 
