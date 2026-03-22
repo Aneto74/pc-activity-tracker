@@ -254,10 +254,32 @@ tr:hover .edit-btn { visibility: visible; }
     </div>
     <div class="bar-wrap"><canvas id="barChart" height="200"></canvas></div>
   </div>
+  <div class="stats-grid">
+    <div class="card">
+      <h2>Время за период</h2>
+      <div style="font-size:28px;font-weight:700;color:#4A90E2" id="histTotalActive">—</div>
+      <div style="font-size:12px;color:#636e72;margin-bottom:10px">всего активного времени</div>
+      <div style="display:flex;gap:24px;margin-bottom:6px">
+        <div>
+          <div style="font-size:12px;color:#636e72">В среднем за день</div>
+          <div style="font-size:18px;font-weight:600" id="histAvgDay">—</div>
+        </div>
+        <div>
+          <div style="font-size:12px;color:#636e72">В среднем за будни</div>
+          <div style="font-size:18px;font-weight:600" id="histAvgWeekday">—</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:#b2bec3" id="histDayCounts"></div>
+    </div>
+    <div class="card">
+      <h2>По категориям за период</h2>
+      <div id="histCatBreakdown"></div>
+    </div>
+  </div>
   <div class="card">
     <h2>Топ приложений за период</h2>
     <table id="histAppTable">
-      <thead><tr><th>Приложение</th><th>Время</th></tr></thead>
+      <thead><tr><th>Приложение</th><th>Категория</th><th>Время</th><th>ø/день</th><th>ø будни</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -346,6 +368,11 @@ tr:hover .edit-btn { visibility: visible; }
     <div class="form-row">
       <label>Категория по умолчанию</label>
       <input type="checkbox" id="mDefault" style="width:auto">
+    </div>
+    <div class="form-row">
+      <label>Игнорировать простой</label>
+      <input type="checkbox" id="mNoIdle" style="width:auto">
+      <div style="font-size:11px;color:#636e72;margin-top:2px">Для видео, игр — время не считается простоем</div>
     </div>
     <div class="form-row">
       <label>Правила</label>
@@ -768,6 +795,7 @@ async function assignCategory(appKey, catId) {
 
   await loadCategories();
   await loadToday();
+  if (document.getElementById('tab-history').classList.contains('active')) await loadHistory();
   showToast('✓ Категория сохранена');
 }
 
@@ -818,6 +846,7 @@ function openCatModal(id) {
   document.getElementById('mName').value = cat ? cat.name : '';
   document.getElementById('mColor').value = cat ? cat.color : '#4A90E2';
   document.getElementById('mDefault').checked = cat ? !!cat.is_default : false;
+  document.getElementById('mNoIdle').checked = cat ? !!cat.no_idle : false;
 
   const rl = document.getElementById('rulesList');
   rl.innerHTML = '';
@@ -864,11 +893,13 @@ async function saveCat() {
   if (editingCatId) {
     const idx = categories.findIndex(c => c.id === editingCatId);
     categories[idx] = { ...categories[idx], name, color: document.getElementById('mColor').value,
-      is_default: document.getElementById('mDefault').checked ? 1 : 0, rules };
+      is_default: document.getElementById('mDefault').checked ? 1 : 0,
+      no_idle: document.getElementById('mNoIdle').checked ? 1 : 0, rules };
   } else {
     const newId = Date.now();
     categories.push({ id: newId, name, color: document.getElementById('mColor').value,
       is_default: document.getElementById('mDefault').checked ? 1 : 0,
+      no_idle: document.getElementById('mNoIdle').checked ? 1 : 0,
       sort_order: categories.length, rules });
   }
 
@@ -908,7 +939,7 @@ async function loadHistory() {
   }
 
   renderBarChart(days);
-  renderHistAppTable(days);
+  renderHistSummary(days);
 }
 
 function renderBarChart(days) {
@@ -940,16 +971,95 @@ function renderBarChart(days) {
   });
 }
 
-function renderHistAppTable(days) {
-  const merged = {};
-  days.forEach(d => {
-    Object.entries(d.by_app || {}).forEach(([app, sec]) => {
-      merged[app] = (merged[app] || 0) + sec;
+function renderHistSummary(days) {
+  const catAgg = {};
+  const appAgg = {};
+  let totalActive = 0;
+  let daysWithData = 0;
+  let weekdayActive = 0;
+  let weekdaysWithData = 0;
+
+  days.forEach(day => {
+    const active = day.active_seconds || 0;
+    if (active === 0) return;
+    totalActive += active;
+    daysWithData++;
+
+    const [y, m, d] = day.date.split('-');
+    const dow = new Date(+y, +m - 1, +d).getDay();
+    const isWeekday = dow >= 1 && dow <= 5;
+    if (isWeekday) { weekdayActive += active; weekdaysWithData++; }
+
+    Object.values(day.by_category || {}).forEach(c => {
+      if (c.seconds <= 0) return;
+      if (!catAgg[c.name]) catAgg[c.name] = { name: c.name, color: c.color, seconds: 0, weekdaySec: 0 };
+      catAgg[c.name].seconds += c.seconds;
+      if (isWeekday) catAgg[c.name].weekdaySec += c.seconds;
+    });
+
+    Object.entries(day.by_app || {}).forEach(([app, sec]) => {
+      if (!appAgg[app]) appAgg[app] = { seconds: 0, weekdaySec: 0, cat: null };
+      appAgg[app].seconds += sec;
+      if (isWeekday) appAgg[app].weekdaySec += sec;
+    });
+    // Take latest app_category mapping
+    Object.entries(day.app_category || {}).forEach(([app, cat]) => {
+      if (appAgg[app]) appAgg[app].cat = cat;
     });
   });
-  const rows = Object.entries(merged).sort((a,b) => b[1]-a[1]).slice(0,15);
+
+  document.getElementById('histTotalActive').textContent = totalActive ? fmtTime(totalActive) : '—';
+  document.getElementById('histAvgDay').textContent = daysWithData ? fmtTime(Math.round(totalActive / daysWithData)) : '—';
+  document.getElementById('histAvgWeekday').textContent = weekdaysWithData ? fmtTime(Math.round(weekdayActive / weekdaysWithData)) : '—';
+  document.getElementById('histDayCounts').textContent = daysWithData
+    ? `Дней с данными: ${daysWithData} (будних: ${weekdaysWithData})`
+    : '';
+
+  // Category breakdown
+  const el = document.getElementById('histCatBreakdown');
+  const entries = Object.values(catAgg).sort((a, b) => b.seconds - a.seconds);
+  if (!entries.length || !totalActive) { el.innerHTML = '<span style="color:#b2bec3">Нет данных</span>'; return; }
+  el.innerHTML = `
+    <div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid #dfe6e9;margin-bottom:2px">
+      <span style="width:8px;flex-shrink:0"></span>
+      <span style="flex:1;font-size:11px;color:#636e72;font-weight:600">Категория</span>
+      <span style="font-size:11px;color:#636e72;font-weight:600;min-width:50px;text-align:right">Всего</span>
+      <span style="font-size:11px;color:#636e72;font-weight:600;min-width:50px;text-align:right">ø/день</span>
+      <span style="font-size:11px;color:#636e72;font-weight:600;min-width:50px;text-align:right">ø будни</span>
+    </div>` + entries.map(c => {
+    const pct = Math.round(c.seconds / totalActive * 100);
+    const avgDay = daysWithData ? fmtTime(Math.round(c.seconds / daysWithData)) : '—';
+    const avgWd = weekdaysWithData ? fmtTime(Math.round(c.weekdaySec / weekdaysWithData)) : '—';
+    return `
+      <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #f5f6fa">
+        <span style="width:8px;height:8px;border-radius:2px;background:${c.color};flex-shrink:0"></span>
+        <span style="flex:1;font-size:13px;color:#2d3436">${c.name} <span style="color:#636e72;font-size:11px">${pct}%</span></span>
+        <span style="font-size:13px;font-weight:500;color:#2d3436;min-width:50px;text-align:right">${fmtTime(c.seconds)}</span>
+        <span style="font-size:12px;color:#636e72;min-width:50px;text-align:right">${avgDay}</span>
+        <span style="font-size:12px;color:#636e72;min-width:50px;text-align:right">${avgWd}</span>
+      </div>`;
+  }).join('');
+
+  // App table
+  const rows = Object.entries(appAgg).sort((a,b) => b[1].seconds - a[1].seconds).slice(0,15);
   const tbody = document.querySelector('#histAppTable tbody');
-  tbody.innerHTML = rows.map(([app, sec]) => `<tr><td>${app}</td><td>${fmtTime(sec)}</td></tr>`).join('');
+  tbody.innerHTML = rows.map(([app, d]) => {
+    const avgDay = daysWithData ? fmtTime(Math.round(d.seconds / daysWithData)) : '—';
+    const avgWd = weekdaysWithData ? fmtTime(Math.round(d.weekdaySec / weekdaysWithData)) : '—';
+    const cat = d.cat || {};
+    const catCell = cat.color
+      ? `<span style="display:inline-flex;align-items:center;gap:5px">
+           <span style="width:8px;height:8px;border-radius:2px;background:${cat.color}"></span>
+           ${cat.name}
+         </span>`
+      : '<span style="color:#b2bec3">—</span>';
+    const isInternal = app.includes('127.0.0.1') || app.includes('localhost');
+    const editBtn = !isInternal
+      ? `<button class="edit-btn" title="Назначить категорию"
+          onclick="showCatPicker(event, '${app.replace(/'/g,"\\'")}')">✏️</button>`
+      : '';
+    return `<tr><td>${app}</td><td>${catCell}</td><td>${fmtTime(d.seconds)}</td><td>${avgDay}</td><td>${avgWd}</td><td style="width:32px">${editBtn}</td></tr>`;
+  }).join('');
 }
 
 // ── Export tab ────────────────────────────────────────────────────────────

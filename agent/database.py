@@ -17,6 +17,7 @@ def init(db_path: str) -> None:
     _db_path = db_path
     with _conn() as conn:
         _create_schema(conn)
+        _migrate(conn)
         _seed_categories(conn)
 
 
@@ -42,7 +43,8 @@ def _create_schema(conn: sqlite3.Connection) -> None:
             name       TEXT NOT NULL,
             color      TEXT NOT NULL,
             is_default INTEGER DEFAULT 0,
-            sort_order INTEGER DEFAULT 0
+            sort_order INTEGER DEFAULT 0,
+            no_idle    INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS rules (
@@ -68,6 +70,13 @@ def _create_schema(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
         CREATE INDEX IF NOT EXISTS idx_events_app ON events(app_name);
     """)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add columns introduced after initial schema."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(categories)").fetchall()}
+    if "no_idle" not in cols:
+        conn.execute("ALTER TABLE categories ADD COLUMN no_idle INTEGER DEFAULT 0")
 
 
 def _seed_categories(conn: sqlite3.Connection) -> None:
@@ -166,23 +175,35 @@ def _classify_with(
     rules: list,
     default_cat_id: Optional[int],
 ) -> Optional[int]:
-    """Classify using pre-loaded rules list (no DB access)."""
+    """Classify using pre-loaded rules list (no DB access).
+
+    URL rules (url_domain, url_contains) are checked first across all
+    categories, then app rules (app_contains, app_exact).  This ensures
+    that more specific URL-based classifications always take priority
+    over generic app-level matches (e.g. url_domain:1fanserials.fun→Отдых
+    wins over app_contains:chrome→Работа).
+    """
     app_lower = (app_name or "").lower()
     url_lower = (url or "").lower()
 
+    # Pass 1: URL rules first (more specific)
+    if url_lower:
+        for rule in rules:
+            rt, val, cat_id = rule["rule_type"], rule["value"].lower(), rule["category_id"]
+            if rt == "url_contains" and val in url_lower:
+                return cat_id
+            if rt == "url_domain":
+                domain_part = url_lower.split("//")[-1].split("/")[0]
+                if val in domain_part:
+                    return cat_id
+
+    # Pass 2: app rules
     for rule in rules:
         rt, val, cat_id = rule["rule_type"], rule["value"].lower(), rule["category_id"]
         if rt == "app_contains" and val in app_lower:
             return cat_id
         if rt == "app_exact" and app_lower == val:
             return cat_id
-        if rt == "url_contains" and url_lower and val in url_lower:
-            return cat_id
-        if rt == "url_domain" and url_lower:
-            # strip scheme
-            domain_part = url_lower.split("//")[-1].split("/")[0]
-            if val in domain_part:
-                return cat_id
 
     return default_cat_id
 
@@ -199,8 +220,8 @@ def _load_classification_context(conn) -> tuple:
            ORDER BY c.sort_order, r.sort_order"""
     ).fetchall()
     cats_map = {
-        r["id"]: {"name": r["name"], "color": r["color"]}
-        for r in conn.execute("SELECT id, name, color FROM categories")
+        r["id"]: {"name": r["name"], "color": r["color"], "no_idle": bool(r["no_idle"])}
+        for r in conn.execute("SELECT id, name, color, no_idle FROM categories")
     }
     default_row = conn.execute(
         "SELECT id FROM categories WHERE is_default=1 LIMIT 1"
@@ -236,6 +257,7 @@ def get_stats(date_str: str) -> dict:
         cat_info = cats_map.get(cat_id) if cat_id is not None else None
         ev["category_name"] = cat_info["name"] if cat_info else "Прочее"
         ev["category_color"] = cat_info["color"] if cat_info else "#95A5A6"
+        ev["category_no_idle"] = cat_info["no_idle"] if cat_info else False
         events.append(ev)
 
     return _aggregate_stats(events)
@@ -275,7 +297,7 @@ def _aggregate_stats(events: list) -> dict:
         else:
             gap = poll
 
-        if ev["is_idle"]:
+        if ev["is_idle"] and not ev.get("category_no_idle"):
             idle_seconds += gap
             continue
 
@@ -346,9 +368,10 @@ def save_categories(categories: list) -> None:
         conn.execute("DELETE FROM categories")
         for cat in categories:
             conn.execute(
-                "INSERT INTO categories (id, name, color, is_default, sort_order) VALUES (?,?,?,?,?)",
+                "INSERT INTO categories (id, name, color, is_default, sort_order, no_idle) VALUES (?,?,?,?,?,?)",
                 (cat["id"], cat["name"], cat["color"],
-                 cat.get("is_default", 0), cat.get("sort_order", 0)),
+                 cat.get("is_default", 0), cat.get("sort_order", 0),
+                 cat.get("no_idle", 0)),
             )
             for rule in cat.get("rules", []):
                 conn.execute(
