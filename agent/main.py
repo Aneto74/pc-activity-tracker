@@ -101,6 +101,7 @@ def main():
     tracker = Tracker(
         poll_interval=cfg["poll_interval"],
         idle_threshold=cfg["idle_threshold"],
+        api_port=port,
     )
 
     api.set_tracker(tracker)

@@ -31,6 +31,7 @@ app.config["JSON_SORT_KEYS"] = False
 
 _tracker: Optional[Tracker] = None
 _cfg: dict = {}
+_last_extension_event: float = 0.0  # timestamp of last event from Chrome extension
 
 
 def set_tracker(tracker: Tracker) -> None:
@@ -119,6 +120,10 @@ def receive_event():
     if not url:
         return jsonify({"error": "url required"}), 400
 
+    # Track last extension event time
+    global _last_extension_event
+    _last_extension_event = time.time()
+
     # Update shared state for tracker
     update_browser_state(url, title)
 
@@ -132,6 +137,19 @@ def receive_event():
         source="extension",
     )
     return jsonify({"ok": True})
+
+
+def get_last_extension_event() -> float:
+    """Return timestamp of last extension event (used by tracker health-check)."""
+    return _last_extension_event
+
+
+# ─── Extension health ─────────────────────────────────────────────────────
+
+@app.route("/api/extension-path")
+def extension_path():
+    ext_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "extension")
+    return jsonify({"path": ext_dir})
 
 
 # ─── Stats ─────────────────────────────────────────────────────────────────

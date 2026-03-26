@@ -5,6 +5,7 @@ import ctypes
 import threading
 import time
 import logging
+import webbrowser
 from typing import Optional
 
 import win32gui
@@ -71,13 +72,22 @@ def _get_browser_state() -> tuple[Optional[str], Optional[str]]:
 
 # ─── Tracker loop ──────────────────────────────────────────────────────────
 
+_EXT_CHECK_INTERVAL = 600       # check every 10 minutes
+_EXT_MISSING_THRESHOLD = 600    # alert if no extension events for 10 min
+_CHROME_ACTIVE_THRESHOLD = 120  # Chrome must be active for 2+ min to trigger
+
+
 class Tracker:
-    def __init__(self, poll_interval: int = 10, idle_threshold: int = 300):
+    def __init__(self, poll_interval: int = 10, idle_threshold: int = 300, api_port: int = 27420):
         self.poll_interval = poll_interval
         self.idle_threshold = idle_threshold
+        self.api_port = api_port
         self._running = False
         self._paused = False
         self._thread: Optional[threading.Thread] = None
+        self._ext_alert_shown = False       # only show once per session
+        self._chrome_active_since: float = 0.0  # when Chrome became active
+        self._last_ext_check: float = 0.0
 
     def start(self) -> None:
         self._running = True
@@ -134,3 +144,46 @@ class Tracker:
             source="agent",
         )
         logger.debug("Event: app=%s idle=%s", app_name, is_idle)
+
+        # Extension health-check
+        self._check_extension_health(app_name)
+
+    def _check_extension_health(self, app_name: str) -> None:
+        """Open help page if Chrome is active but extension is not sending events."""
+        if self._ext_alert_shown:
+            return
+
+        now = time.time()
+        is_chrome = app_name.lower() in BROWSER_APPS
+
+        # Track how long Chrome has been the active window
+        if is_chrome:
+            if self._chrome_active_since == 0:
+                self._chrome_active_since = now
+        else:
+            self._chrome_active_since = 0
+            return
+
+        # Only check periodically
+        if now - self._last_ext_check < _EXT_CHECK_INTERVAL:
+            return
+        self._last_ext_check = now
+
+        # Chrome must be active for a while (avoid false positives on quick tab switches)
+        if now - self._chrome_active_since < _CHROME_ACTIVE_THRESHOLD:
+            return
+
+        # Check if extension has sent events recently
+        from . import api
+        last_ext = api.get_last_extension_event()
+        if last_ext > 0 and (now - last_ext) < _EXT_MISSING_THRESHOLD:
+            return  # extension is working
+
+        # No extension events — open help page
+        self._ext_alert_shown = True
+        help_url = f"http://127.0.0.1:{self.api_port}/extension-help.html"
+        logger.warning("Chrome extension not detected — opening help page: %s", help_url)
+        try:
+            webbrowser.open(help_url)
+        except Exception as e:
+            logger.error("Failed to open extension help page: %s", e)
