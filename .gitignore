@@ -1,8 +1,9 @@
 # Personal data — activity logs, databases
-data/activity.db
-data/tracker.db
-data/agent.log
+data/*.db
+data/*.log
+data/*.log.*
 data/startup_error.txt
+data/export/
 
 # Local config (contains machine-specific paths)
 data/config.json
